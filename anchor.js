@@ -1,9 +1,5 @@
 "use strict";
-/**
- * Reads the popup window ID from the URL hash, fetches its state from the
- * background service worker, and renders the favicon, title, color bar, and
- * button handlers for this anchor tab.
- */
+Object.defineProperty(exports, "__esModule", { value: true });
 async function init() {
     const popupWindowId = parseInt(location.hash.slice(1), 10);
     if (!popupWindowId) {
