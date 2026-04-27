@@ -1,3 +1,14 @@
+function applyState(state: PopupEntry): void {
+  if (state.tabFavicon) {
+    const img = document.getElementById('favicon') as HTMLImageElement;
+    img.src = state.tabFavicon;
+    img.style.display = 'block';
+  }
+  const title = state.tabTitle || '(Untitled)';
+  document.getElementById('title')!.textContent = title;
+  document.title = `${COLOR_DOTS[state.color] ?? '⚫'} ${title}`;
+}
+
 async function init(): Promise<void> {
   const popupWindowId = parseInt(location.hash.slice(1), 10);
   if (!popupWindowId) {
@@ -18,15 +29,7 @@ async function init(): Promise<void> {
     return;
   }
 
-  if (state.tabFavicon) {
-    const img = document.getElementById('favicon') as HTMLImageElement;
-    img.src = state.tabFavicon;
-    img.style.display = 'block';
-  }
-
-  const title = state.tabTitle || '(Untitled)';
-  document.getElementById('title')!.textContent = title;
-  document.title = `${COLOR_DOTS[state.color] ?? '⚫'} ${title}`;
+  applyState(state);
 
   document.getElementById('focus-btn')!.addEventListener('click', () => {
     chrome.runtime.sendMessage({ action: 'focusPopup', popupWindowId });
@@ -40,6 +43,14 @@ async function init(): Promise<void> {
       popupWindowId,
       anchorTabIndex: tab.index,
     });
+  });
+
+  chrome.runtime.onMessage.addListener((message: Record<string, unknown>) => {
+    if (message['action'] !== 'refreshState') return;
+    chrome.runtime.sendMessage({ action: 'getState', popupWindowId }).then(response => {
+      const fresh = (response as { state: PopupEntry | null }).state;
+      if (fresh) applyState(fresh);
+    }).catch(() => {});
   });
 }
 

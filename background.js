@@ -262,3 +262,55 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     })();
     return true;
 });
+// ─── Tab Removed ─────────────────────────────────────────────────────────────
+// Case 1: Popup window X-closed → recreate tab from saved URL at anchor position
+// Case 2: Anchor tab manually closed → close the orphaned popup window
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+    // Case 1: popup tab removed because its window was X-closed → close the anchor too
+    const popupEntry = await getPopupByPopupTabId(tabId);
+    if (popupEntry && removeInfo.isWindowClosing) {
+        // Remove from storage BEFORE closing anchor tab to prevent Case 2 race
+        await removePopup(popupEntry.popupWindowId);
+        try {
+            await chrome.tabs.remove(popupEntry.anchorTabId);
+        }
+        catch { /* already gone */ }
+        return;
+    }
+    // Case 2: anchor tab manually closed → close the orphaned popup window
+    const anchorEntry = await getPopupByAnchorTabId(tabId);
+    if (anchorEntry) {
+        // Remove from storage BEFORE closing popup window to prevent Case 1 re-trigger
+        await removePopup(anchorEntry.popupWindowId);
+        try {
+            await chrome.windows.remove(anchorEntry.popupWindowId);
+        }
+        catch { }
+    }
+});
+// ─── Tab Updated — track URL/title/favicon changes inside popup ───────────────
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+    if (!changeInfo.url && !changeInfo.title && !changeInfo.favIconUrl)
+        return;
+    const entry = await getPopupByPopupTabId(tabId);
+    if (!entry)
+        return;
+    await addPopup({
+        ...entry,
+        ...(changeInfo.url && { tabUrl: changeInfo.url }),
+        ...(changeInfo.title && { tabTitle: changeInfo.title }),
+        ...(changeInfo.favIconUrl && { tabFavicon: changeInfo.favIconUrl }),
+    });
+    if (changeInfo.title || changeInfo.favIconUrl) {
+        chrome.tabs.sendMessage(entry.anchorTabId, { action: 'refreshState' }).catch(() => { });
+    }
+});
+// ─── Window Bounds Changed — persist popup position ──────────────────────────
+chrome.windows.onBoundsChanged.addListener(async (win) => {
+    const entry = await getPopupByWindowId(win.id);
+    if (!entry)
+        return;
+    await chrome.storage.local.set({
+        lastPopupPosition: { left: win.left, top: win.top },
+    });
+});
