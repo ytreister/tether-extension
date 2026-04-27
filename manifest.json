@@ -3,7 +3,7 @@
   "name": "Tether",
   "version": "1.0.0",
   "description": "Pop a tab into a popup window with a color-coded anchor to snap it back.",
-  "permissions": ["tabs", "windows", "storage", "contextMenus", "scripting", "notifications"],
+  "permissions": ["tabs", "windows", "storage", "scripting", "notifications"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"

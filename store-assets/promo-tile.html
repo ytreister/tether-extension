@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=440">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 440px;
+    height: 280px;
+    overflow: hidden;
+    background: #0d1117;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 28px 0 32px;
+  }
+
+  /* ── LEFT: branding ── */
+  .left {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .logo-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-row img {
+    width: 40px;
+    height: 40px;
+    border-radius: 9px;
+  }
+
+  .title {
+    font-size: 30px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.5px;
+  }
+
+  .tagline {
+    font-size: 12.5px;
+    color: #7d8592;
+    line-height: 1.55;
+    max-width: 172px;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  /* ── RIGHT: browser scene ── */
+  .scene {
+    position: relative;
+    width: 226px;
+    height: 220px;
+    flex-shrink: 0;
+  }
+
+  /* Main browser window */
+  .main-window {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 210px;
+    background: #161b22;
+    border-radius: 8px;
+    border: 1px solid #30363d;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  }
+
+  .tab-bar {
+    background: #1c2128;
+    padding: 6px 8px 0;
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid #30363d;
+  }
+
+  .tab {
+    padding: 4px 8px;
+    border-radius: 4px 4px 0 0;
+    font-size: 9px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    color: #7d8592;
+    background: transparent;
+  }
+
+  .tab.active {
+    background: #161b22;
+    color: #e6edf3;
+  }
+
+  .tab-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .win-body {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .line {
+    height: 6px;
+    border-radius: 3px;
+    background: #21262d;
+  }
+
+  .line.short  { width: 45%; }
+  .line.medium { width: 70%; }
+  .line.long   { width: 95%; }
+  .line.accent { background: #1a3a5c; width: 60%; }
+
+  /* Popup windows */
+  .popup {
+    position: absolute;
+    width: 136px;
+    background: #161b22;
+    border-radius: 8px;
+    border: 1px solid #30363d;
+    overflow: hidden;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+  }
+
+  .popup-1 {
+    bottom: 28px;
+    left: 0;
+    z-index: 3;
+  }
+
+  .popup-2 {
+    bottom: 54px;
+    left: 50px;
+    z-index: 2;
+  }
+
+  .popup-titlebar {
+    padding: 6px 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    border-bottom: 1px solid #30363d;
+  }
+
+  .popup-1 .popup-titlebar { background: #0d2137; }
+  .popup-2 .popup-titlebar { background: #0d2a18; }
+
+  .popup-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .popup-name {
+    font-size: 9px;
+    color: #c9d1d9;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .popup-body {
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+</style>
+</head>
+<body>
+
+<!-- LEFT -->
+<div class="left">
+  <div class="logo-row">
+    <img src="../icons/icon128.png" alt="Tether">
+    <span class="title">Tether</span>
+  </div>
+  <div class="tagline">Pop any tab into a floating popup. One key to snap it back.</div>
+</div>
+
+<!-- RIGHT: scene -->
+<div class="scene">
+
+  <!-- Popup 1 (blue) -->
+  <div class="popup popup-1">
+    <div class="popup-titlebar">
+      <div class="popup-indicator" style="background:#3b82f6; box-shadow:0 0 5px #3b82f680;"></div>
+      <span class="popup-name">GitHub – Pull Requests</span>
+    </div>
+    <div class="popup-body">
+      <div class="line long"></div>
+      <div class="line medium"></div>
+      <div class="line short"></div>
+      <div class="line long"></div>
+    </div>
+  </div>
+
+  <!-- Popup 2 (green) -->
+  <div class="popup popup-2">
+    <div class="popup-titlebar">
+      <div class="popup-indicator" style="background:#22c55e; box-shadow:0 0 5px #22c55e80;"></div>
+      <span class="popup-name">Slack – #eng</span>
+    </div>
+    <div class="popup-body">
+      <div class="line medium"></div>
+      <div class="line long"></div>
+      <div class="line short"></div>
+      <div class="line medium"></div>
+    </div>
+  </div>
+
+  <!-- Main browser window -->
+  <div class="main-window">
+    <div class="tab-bar">
+      <!-- Tab 1: normal active tab -->
+      <div class="tab active">
+        Gmail
+      </div>
+      <!-- Tab 2: anchored (blue) -->
+      <div class="tab">
+        <div class="tab-dot" style="background:#3b82f6;"></div>
+        GitHub
+      </div>
+      <!-- Tab 3: anchored (green) -->
+      <div class="tab">
+        <div class="tab-dot" style="background:#22c55e;"></div>
+        Slack
+      </div>
+    </div>
+    <div class="win-body">
+      <div class="line long"></div>
+      <div class="line accent"></div>
+      <div class="line medium"></div>
+      <div class="line short"></div>
+      <div class="line long"></div>
+      <div class="line medium"></div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

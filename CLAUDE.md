@@ -39,6 +39,10 @@ Pure TypeScript types and constants. `PopupEntry` is the central state record; `
 
 **State sync**: `chrome.tabs.onUpdated` tracks URL/title/favicon changes in popup tabs, updates `chrome.storage.session`, and sends a `refreshState` message to the anchor tab.
 
+## Specs & Plans
+
+Design specs and implementation plans live in `.claude/superpowers/` (moved from `docs/superpowers/` to keep `docs/` clean for GitHub Pages).
+
 ## Important Constraints
 
 - **Max 5 simultaneous popups** — enforced in `handlePopCommand`; also drives the 5-color system (`COLOR_DOTS` in `src/consts.ts`).
