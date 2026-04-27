@@ -106,7 +106,7 @@ async function popOut(tab) {
         url: chrome.runtime.getURL(`anchor.html#${popupWindow.id}`),
         index: tab.index,
         windowId: tab.windowId,
-        active: false,
+        active: true,
     });
     await chrome.windows.update(popupWindow.id, { focused: true });
     await addPopup({
@@ -123,6 +123,61 @@ async function popOut(tab) {
     // Also try immediately in case tab already reached complete before our listener fired
     execDot(popupTabId).catch(() => { });
 }
+// ─── Return Flow ─────────────────────────────────────────────────────────────
+async function returnTab(popupWindowId, anchorTabIndex) {
+    const entry = await getPopupByWindowId(popupWindowId);
+    if (!entry)
+        return;
+    // Save popup position before closing it
+    try {
+        const win = await chrome.windows.get(entry.popupWindowId);
+        await chrome.storage.local.set({
+            lastPopupPosition: { left: win.left, top: win.top },
+        });
+    }
+    catch { /* window already gone */ }
+    // Get current URL (may have navigated since pop-out)
+    let currentUrl = entry.tabUrl;
+    try {
+        const tab = await chrome.tabs.get(entry.popupTabId);
+        currentUrl = tab.url ?? currentUrl;
+    }
+    catch { /* tab gone */ }
+    // Determine target window — create a new one if original was closed
+    let targetWindowId = entry.originalWindowId;
+    try {
+        await chrome.windows.get(entry.originalWindowId);
+    }
+    catch {
+        const newWindow = await chrome.windows.create({ type: 'normal' });
+        targetWindowId = newWindow.id;
+    }
+    // Recreate tab at anchor's current position (tabs.move disallows popup-type windows)
+    await chrome.tabs.create({
+        url: currentUrl,
+        windowId: targetWindowId,
+        index: anchorTabIndex,
+        active: true,
+    });
+    // Close popup window (removes popup tab with it)
+    try {
+        await chrome.windows.remove(entry.popupWindowId);
+    }
+    catch { /* already gone */ }
+    // Close anchor tab
+    try {
+        await chrome.tabs.remove(entry.anchorTabId);
+    }
+    catch { /* already gone */ }
+    await removePopup(popupWindowId);
+}
+// ─── Focus Popup ─────────────────────────────────────────────────────────────
+async function focusPopup(popupWindowId) {
+    const entry = await getPopupByWindowId(popupWindowId);
+    if (!entry)
+        return;
+    await chrome.windows.update(entry.popupWindowId, { focused: true });
+}
 // ─── TEMP listeners — replaced in Task 8 ─────────────────────────────────────
 chrome.commands.onCommand.addListener(async (command) => {
     if (command !== 'pop-tab')
@@ -132,9 +187,22 @@ chrome.commands.onCommand.addListener(async (command) => {
         await popOut(tab);
 });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message['action'] === 'getState') {
-        getPopupByWindowId(message['popupWindowId'])
-            .then(state => sendResponse({ state }));
-        return true;
-    }
+    (async () => {
+        switch (message['action']) {
+            case 'getState':
+                sendResponse({ state: await getPopupByWindowId(message['popupWindowId']) });
+                break;
+            case 'returnTab':
+                await returnTab(message['popupWindowId'], message['anchorTabIndex']);
+                sendResponse({ ok: true });
+                break;
+            case 'focusPopup':
+                await focusPopup(message['popupWindowId']);
+                sendResponse({ ok: true });
+                break;
+            default:
+                sendResponse({ error: 'unknown action' });
+        }
+    })();
+    return true;
 });

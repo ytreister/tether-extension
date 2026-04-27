@@ -9,9 +9,10 @@ body {
   color: #555;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   min-height: 100vh;
+  padding-top: 3rem;
 }
 
 .container {
