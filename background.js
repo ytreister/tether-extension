@@ -94,9 +94,17 @@ function injectDotWhenReady(tabId, dot, iconUrl) {
                 document.title = prefix + document.title; };
             applyTitle();
             applyFavicon();
-            setInterval(() => { applyTitle(); applyFavicon(); }, 1000);
-            new MutationObserver(() => { applyTitle(); applyFavicon(); })
-                .observe(document.head ?? document.documentElement, { subtree: true, childList: true, characterData: true });
+            const intervalId = setInterval(() => { applyTitle(); applyFavicon(); }, 1000);
+            const obs = new MutationObserver(() => { applyTitle(); applyFavicon(); });
+            obs.observe(document.head ?? document.documentElement, { subtree: true, childList: true, characterData: true });
+            window.__tetherRemove = () => {
+                clearInterval(intervalId);
+                obs.disconnect();
+                if (document.title.startsWith(prefix))
+                    document.title = document.title.slice(prefix.length);
+                document.querySelectorAll(`link[rel*="icon"][href="${icon}"]`).forEach(el => el.remove());
+                window.__tetherDot = false;
+            };
         },
         args: [dot, iconUrl],
     });
@@ -112,22 +120,21 @@ async function popOut(tab) {
     const [bounds, popups] = await Promise.all([getPopupBounds(), getAllPopups()]);
     const color = pickColor(popups);
     const stagger = Object.keys(popups).length * 30;
-    // Chrome doesn't allow tabs.move to/from popup-type windows, so we open the
-    // URL directly in the new popup (the page reloads — JS state is not preserved).
+    // Use tabId to move the existing tab into the popup without a page reload.
+    // (tabs.move disallows popup-type windows, but windows.create({ tabId }) does not.)
     const popupWindow = await chrome.windows.create({
         type: 'popup',
-        url: tab.url,
+        tabId: tab.id,
         width: bounds.width,
         height: bounds.height,
         left: bounds.left + stagger,
         top: bounds.top + stagger,
     });
-    const popupTabId = popupWindow.tabs[0].id;
+    const popupTabId = tab.id;
     const dot = COLOR_DOTS[color] ?? '⚫';
     const iconUrl = chrome.runtime.getURL('icons/icon48.png');
     injectDotWhenReady(popupTabId, dot, iconUrl);
-    // Close the original tab and insert anchor at its position
-    await chrome.tabs.remove(tab.id);
+    // Tab was moved; insert anchor at its vacated position
     const anchorTab = await chrome.tabs.create({
         url: chrome.runtime.getURL(`anchor.html#${popupWindow.id}`),
         index: tab.index,
@@ -167,21 +174,23 @@ async function autoTether(tab, oldWindowId, oldPosition, newWindow) {
     const top = newWindow.top ?? 100;
     const width = newWindow.width ?? 900;
     const height = newWindow.height ?? 700;
-    const popupWindow = await chrome.windows.create({
-        type: 'popup',
-        url: tab.url,
-        width,
-        height,
-        left,
-        top,
-    });
-    const popupTabId = popupWindow.tabs[0].id;
-    injectDotWhenReady(popupTabId, dot, iconUrl);
     // onAttached can fire while the drag gesture is still active; Chrome rejects
     // tab/window write operations until the user releases. Retry until it allows it.
+    // windows.create({ tabId }) is also a tab-move operation so it goes inside the loop.
+    let popupWindow;
     let anchorTab;
     for (let attempt = 0; attempt < 15; attempt++) {
         try {
+            if (!popupWindow) {
+                popupWindow = await chrome.windows.create({
+                    type: 'popup',
+                    tabId: tab.id,
+                    width,
+                    height,
+                    left,
+                    top,
+                });
+            }
             try {
                 await chrome.windows.remove(newWindow.id);
             }
@@ -202,9 +211,10 @@ async function autoTether(tab, oldWindowId, oldPosition, newWindow) {
             throw e;
         }
     }
+    injectDotWhenReady(tab.id, dot, iconUrl);
     await addPopup({
         popupWindowId: popupWindow.id,
-        popupTabId,
+        popupTabId: tab.id,
         originalWindowId: oldWindowId,
         anchorTabId: anchorTab.id,
         originalIndex: oldPosition,
@@ -259,13 +269,6 @@ async function returnTab(popupWindowId, anchorTabIndex) {
         });
     }
     catch { /* window already gone */ }
-    // Get current URL (may have navigated since pop-out)
-    let currentUrl = entry.tabUrl;
-    try {
-        const tab = await chrome.tabs.get(entry.popupTabId);
-        currentUrl = tab.url ?? currentUrl;
-    }
-    catch { /* tab gone */ }
     // Determine target window — create a new one if original was closed
     let targetWindowId = entry.originalWindowId;
     try {
@@ -275,24 +278,35 @@ async function returnTab(popupWindowId, anchorTabIndex) {
         const newWindow = await chrome.windows.create({ type: 'normal' });
         targetWindowId = newWindow.id;
     }
-    // Recreate tab at anchor's current position (tabs.move disallows popup-type windows)
-    await chrome.tabs.create({
-        url: currentUrl,
+    // Remove dot decoration before moving the tab back
+    await chrome.scripting.executeScript({
+        target: { tabId: entry.popupTabId },
+        func: () => { window.__tetherRemove?.(); },
+    }).catch(() => { });
+    // Remove from storage BEFORE moving to prevent onRemoved races
+    await removePopup(popupWindowId);
+    // Move tab from popup to target window without a page reload.
+    // tabs.move disallows popup-type source windows, so we route through a
+    // minimized normal window as intermediary, then move normal→normal.
+    const tempWindow = await chrome.windows.create({
+        type: 'normal',
+        tabId: entry.popupTabId,
+        state: 'minimized',
+    });
+    await chrome.tabs.move(entry.popupTabId, {
         windowId: targetWindowId,
         index: anchorTabIndex,
-        active: true,
     });
-    // Close popup window (removes popup tab with it)
+    await chrome.tabs.update(entry.popupTabId, { active: true });
     try {
-        await chrome.windows.remove(entry.popupWindowId);
+        await chrome.windows.remove(tempWindow.id);
     }
-    catch { /* already gone */ }
+    catch { /* auto-closed */ }
     // Close anchor tab
     try {
         await chrome.tabs.remove(entry.anchorTabId);
     }
     catch { /* already gone */ }
-    await removePopup(popupWindowId);
 }
 // ─── Focus Popup ─────────────────────────────────────────────────────────────
 async function focusPopup(popupWindowId) {
