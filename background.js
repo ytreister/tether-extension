@@ -263,7 +263,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
 });
 // ─── Tab Removed ─────────────────────────────────────────────────────────────
-// Case 1: Popup window X-closed → recreate tab from saved URL at anchor position
+// Case 1: Popup window X-closed → close the anchor tab (symmetric dismiss)
 // Case 2: Anchor tab manually closed → close the orphaned popup window
 chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
     // Case 1: popup tab removed because its window was X-closed → close the anchor too
@@ -295,10 +295,17 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
     const entry = await getPopupByPopupTabId(tabId);
     if (!entry)
         return;
+    // Strip dot prefix that execDot injected, so anchor.ts doesn't double-render it
+    let title = changeInfo.title;
+    if (title) {
+        const dot = COLOR_DOTS[entry.color];
+        if (dot && title.startsWith(dot + ' '))
+            title = title.slice(dot.length + 1);
+    }
     await addPopup({
         ...entry,
         ...(changeInfo.url && { tabUrl: changeInfo.url }),
-        ...(changeInfo.title && { tabTitle: changeInfo.title }),
+        ...(title && { tabTitle: title }),
         ...(changeInfo.favIconUrl && { tabFavicon: changeInfo.favIconUrl }),
     });
     if (changeInfo.title || changeInfo.favIconUrl) {

@@ -324,10 +324,18 @@ chrome.tabs.onUpdated.addListener(async (tabId: number, changeInfo) => {
   if (!changeInfo.url && !changeInfo.title && !changeInfo.favIconUrl) return;
   const entry = await getPopupByPopupTabId(tabId);
   if (!entry) return;
+
+  // Strip dot prefix that execDot injected, so anchor.ts doesn't double-render it
+  let title = changeInfo.title;
+  if (title) {
+    const dot = COLOR_DOTS[entry.color];
+    if (dot && title.startsWith(dot + ' ')) title = title.slice(dot.length + 1);
+  }
+
   await addPopup({
     ...entry,
     ...(changeInfo.url && { tabUrl: changeInfo.url }),
-    ...(changeInfo.title && { tabTitle: changeInfo.title }),
+    ...(title && { tabTitle: title }),
     ...(changeInfo.favIconUrl && { tabFavicon: changeInfo.favIconUrl }),
   });
   if (changeInfo.title || changeInfo.favIconUrl) {
