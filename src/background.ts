@@ -201,12 +201,51 @@ async function focusPopup(popupWindowId: number): Promise<void> {
   await chrome.windows.update(entry.popupWindowId, { focused: true });
 }
 
-// ─── TEMP listeners — replaced in Task 8 ─────────────────────────────────────
+// ─── Shared Pop/Return Logic ──────────────────────────────────────────────────
+
+async function handlePopCommand(): Promise<void> {
+  const [popups, focusedWindow] = await Promise.all([
+    getAllPopups(),
+    chrome.windows.getLastFocused(),
+  ]);
+
+  // If the focused window IS a tether popup → return its tab
+  const popupEntry = await getPopupByWindowId(focusedWindow.id!);
+  if (popupEntry) {
+    let anchorIndex = popupEntry.originalIndex;
+    try {
+      const anchorTab = await chrome.tabs.get(popupEntry.anchorTabId);
+      anchorIndex = anchorTab.index;
+    } catch { /* anchor gone, fall back to originalIndex */ }
+    await returnTab(popupEntry.popupWindowId, anchorIndex);
+    return;
+  }
+
+  // Otherwise → pop the current tab (if under max)
+  if (Object.keys(popups).length >= MAX_POPUPS) {
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/icon48.png'),
+      title: 'Tether',
+      message: `You've reached the limit of ${MAX_POPUPS} popup tabs. Return one before popping another.`,
+    });
+    return;
+  }
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) await popOut(tab);
+}
+
+// ─── Keyboard Shortcut ───────────────────────────────────────────────────────
 
 chrome.commands.onCommand.addListener(async (command: string) => {
   if (command !== 'pop-tab') return;
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab) await popOut(tab);
+  await handlePopCommand();
+});
+
+// ─── Toolbar Icon Click ──────────────────────────────────────────────────────
+
+chrome.action.onClicked.addListener(async () => {
+  await handlePopCommand();
 });
 
 chrome.runtime.onMessage.addListener(
