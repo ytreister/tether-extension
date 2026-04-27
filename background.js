@@ -176,16 +176,31 @@ async function autoTether(tab, oldWindowId, oldPosition, newWindow) {
     });
     const popupTabId = popupWindow.tabs[0].id;
     injectDotWhenReady(popupTabId, dot, iconUrl);
-    try {
-        await chrome.windows.remove(newWindow.id);
+    // onAttached can fire while the drag gesture is still active; Chrome rejects
+    // tab/window write operations until the user releases. Retry until it allows it.
+    let anchorTab;
+    for (let attempt = 0; attempt < 15; attempt++) {
+        try {
+            try {
+                await chrome.windows.remove(newWindow.id);
+            }
+            catch { /* already gone */ }
+            anchorTab = await chrome.tabs.create({
+                url: chrome.runtime.getURL(`anchor.html#${popupWindow.id}`),
+                index: oldPosition,
+                windowId: oldWindowId,
+                active: true,
+            });
+            break;
+        }
+        catch (e) {
+            if (attempt < 14 && String(e?.message ?? '').includes('dragging')) {
+                await new Promise(r => setTimeout(r, 150));
+                continue;
+            }
+            throw e;
+        }
     }
-    catch { /* already gone */ }
-    const anchorTab = await chrome.tabs.create({
-        url: chrome.runtime.getURL(`anchor.html#${popupWindow.id}`),
-        index: oldPosition,
-        windowId: oldWindowId,
-        active: true,
-    });
     await addPopup({
         popupWindowId: popupWindow.id,
         popupTabId,
@@ -405,4 +420,44 @@ chrome.windows.onBoundsChanged.addListener(async (win) => {
     await chrome.storage.local.set({
         lastPopupPosition: { left: win.left, top: win.top },
     });
+});
+// ─── Auto-Tether Detection ────────────────────────────────────────────────────
+// onDetached records pending drags; onAttached confirms a new-window drag and converts.
+const pendingDetaches = new Map();
+chrome.tabs.onDetached.addListener((tabId, detachInfo) => {
+    pendingDetaches.set(tabId, {
+        oldWindowId: detachInfo.oldWindowId,
+        oldPosition: detachInfo.oldPosition,
+    });
+});
+chrome.tabs.onAttached.addListener(async (tabId, attachInfo) => {
+    const pending = pendingDetaches.get(tabId);
+    if (!pending)
+        return;
+    pendingDetaches.delete(tabId);
+    const result = await chrome.storage.local.get('autoTetherDrags');
+    if (!result['autoTetherDrags'])
+        return;
+    let win;
+    try {
+        win = await chrome.windows.get(attachInfo.newWindowId, { populate: true });
+    }
+    catch {
+        return;
+    }
+    // Only intercept drag-to-new-window: must be normal type with exactly 1 tab
+    if (win.type !== 'normal' || (win.tabs?.length ?? 0) !== 1)
+        return;
+    let tab;
+    try {
+        tab = await chrome.tabs.get(tabId);
+    }
+    catch {
+        return;
+    }
+    // Skip restricted URLs that Chrome won't open in a popup
+    const url = tab.url ?? '';
+    if (!url || url.startsWith('chrome://') || url.startsWith('about:') || url.startsWith('chrome-extension://'))
+        return;
+    await autoTether(tab, pending.oldWindowId, pending.oldPosition, win);
 });
