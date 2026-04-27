@@ -1,5 +1,4 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
 async function init() {
     const popupWindowId = parseInt(location.hash.slice(1), 10);
     if (!popupWindowId) {
@@ -18,7 +17,6 @@ async function init() {
         document.getElementById('title').textContent = '(state unavailable)';
         return;
     }
-    document.getElementById('color-bar').style.background = state.color;
     if (state.tabFavicon) {
         const img = document.getElementById('favicon');
         img.src = state.tabFavicon;
@@ -26,7 +24,7 @@ async function init() {
     }
     const title = state.tabTitle || '(Untitled)';
     document.getElementById('title').textContent = title;
-    document.title = `\u{1F441} ${title}`;
+    document.title = `${COLOR_DOTS[state.color] ?? '⚫'} ${title}`;
     document.getElementById('focus-btn').addEventListener('click', () => {
         chrome.runtime.sendMessage({ action: 'focusPopup', popupWindowId });
     });

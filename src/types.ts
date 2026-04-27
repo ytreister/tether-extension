@@ -1,6 +1,6 @@
 // Shared types used by both the service worker and the anchor tab page.
 
-export interface PopupEntry {
+interface PopupEntry {
   popupWindowId: number;
   popupTabId: number;
   originalWindowId: number;
@@ -12,9 +12,9 @@ export interface PopupEntry {
   color: string;
 }
 
-export type PopupsMap = Record<number, PopupEntry>;
+type PopupsMap = Record<number, PopupEntry>;
 
-export interface PopupBounds {
+interface PopupBounds {
   width: number;
   height: number;
   left: number;

@@ -1,15 +1,7 @@
 "use strict";
 // src/background.ts
 // Service worker — all business logic for the Tether extension.
-Object.defineProperty(exports, "__esModule", { value: true });
-// ─── Constants ────────────────────────────────────────────────────────────────
-const COLORS = [
-    '#1a73e8', // blue
-    '#0f9d58', // green
-    '#f4511e', // red-orange
-    '#9c27b0', // purple
-    '#ff6d00', // amber
-];
+importScripts('consts.js');
 const MAX_POPUPS = 5;
 // ─── State Management (chrome.storage.session) ───────────────────────────────
 // Shape: { popups: PopupsMap }
@@ -41,7 +33,8 @@ async function removePopup(popupWindowId) {
 }
 function pickColor(popups) {
     const used = new Set(Object.values(popups).map(p => p.color));
-    return COLORS.find(c => !used.has(c)) ?? COLORS[0];
+    const colors = Object.keys(COLOR_DOTS);
+    return colors.find(c => !used.has(c)) ?? colors[0];
 }
 // ─── Position Management (chrome.storage.local) ──────────────────────────────
 async function getPopupBounds() {
@@ -56,3 +49,92 @@ async function getPopupBounds() {
         top: saved?.top ?? 100,
     };
 }
+// ─── Pop Out Flow ─────────────────────────────────────────────────────────────
+async function popOut(tab) {
+    const [bounds, popups] = await Promise.all([getPopupBounds(), getAllPopups()]);
+    const color = pickColor(popups);
+    // Chrome doesn't allow tabs.move to/from popup-type windows, so we open the
+    // URL directly in the new popup (the page reloads — JS state is not preserved).
+    const popupWindow = await chrome.windows.create({
+        type: 'popup',
+        url: tab.url,
+        width: bounds.width,
+        height: bounds.height,
+        left: bounds.left,
+        top: bounds.top,
+    });
+    const popupTabId = popupWindow.tabs[0].id;
+    const dot = COLOR_DOTS[color] ?? '⚫';
+    const iconUrl = chrome.runtime.getURL('icons/icon48.png');
+    const execDot = (tabId) => chrome.scripting.executeScript({
+        target: { tabId },
+        func: (d, icon) => {
+            if (window.__tetherDot)
+                return;
+            window.__tetherDot = true;
+            const applyFavicon = () => {
+                const existing = document.querySelector('link[rel*="icon"]');
+                if (existing?.getAttribute('href') === icon)
+                    return;
+                document.querySelectorAll('link[rel*="icon"]').forEach(el => el.remove());
+                const link = document.createElement('link');
+                link.rel = 'icon';
+                link.href = icon;
+                document.head?.appendChild(link);
+            };
+            const prefix = d + ' ';
+            const applyTitle = () => { if (!document.title.startsWith(prefix))
+                document.title = prefix + document.title; };
+            applyTitle();
+            applyFavicon();
+            setInterval(() => { applyTitle(); applyFavicon(); }, 1000);
+            new MutationObserver(() => { applyTitle(); applyFavicon(); })
+                .observe(document.head ?? document.documentElement, { subtree: true, childList: true, characterData: true });
+        },
+        args: [dot, iconUrl],
+    });
+    // Register listener BEFORE other awaits so we don't miss the complete event
+    chrome.tabs.onUpdated.addListener(function onComplete(id, info) {
+        if (id !== popupTabId || info.status !== 'complete')
+            return;
+        chrome.tabs.onUpdated.removeListener(onComplete);
+        execDot(popupTabId).catch(console.error);
+    });
+    // Close the original tab and insert anchor at its position
+    await chrome.tabs.remove(tab.id);
+    const anchorTab = await chrome.tabs.create({
+        url: chrome.runtime.getURL(`anchor.html#${popupWindow.id}`),
+        index: tab.index,
+        windowId: tab.windowId,
+        active: false,
+    });
+    await chrome.windows.update(popupWindow.id, { focused: true });
+    await addPopup({
+        popupWindowId: popupWindow.id,
+        popupTabId: popupTabId,
+        originalWindowId: tab.windowId,
+        anchorTabId: anchorTab.id,
+        originalIndex: tab.index,
+        tabTitle: tab.title ?? '',
+        tabFavicon: tab.favIconUrl ?? '',
+        tabUrl: tab.url ?? '',
+        color,
+    });
+    // Also try immediately in case tab already reached complete before our listener fired
+    execDot(popupTabId).catch(() => { });
+}
+// ─── TEMP listeners — replaced in Task 8 ─────────────────────────────────────
+chrome.commands.onCommand.addListener(async (command) => {
+    if (command !== 'pop-tab')
+        return;
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab)
+        await popOut(tab);
+});
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message['action'] === 'getState') {
+        getPopupByWindowId(message['popupWindowId'])
+            .then(state => sendResponse({ state }));
+        return true;
+    }
+});

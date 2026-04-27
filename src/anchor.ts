@@ -1,5 +1,3 @@
-import type { PopupEntry } from './types';
-
 async function init(): Promise<void> {
   const popupWindowId = parseInt(location.hash.slice(1), 10);
   if (!popupWindowId) {
@@ -20,8 +18,6 @@ async function init(): Promise<void> {
     return;
   }
 
-  document.getElementById('color-bar')!.style.background = state.color;
-
   if (state.tabFavicon) {
     const img = document.getElementById('favicon') as HTMLImageElement;
     img.src = state.tabFavicon;
@@ -30,7 +26,7 @@ async function init(): Promise<void> {
 
   const title = state.tabTitle || '(Untitled)';
   document.getElementById('title')!.textContent = title;
-  document.title = `\u{1F441} ${title}`;
+  document.title = `${COLOR_DOTS[state.color] ?? '⚫'} ${title}`;
 
   document.getElementById('focus-btn')!.addEventListener('click', () => {
     chrome.runtime.sendMessage({ action: 'focusPopup', popupWindowId });
