@@ -6,6 +6,30 @@ importScripts('consts.js');
 
 const MAX_POPUPS = 5;
 
+// ─── Startup Validation ───────────────────────────────────────────────────────
+// On every service worker activation, prune popup entries whose windows or tabs
+// no longer exist (caused by crashes or mid-op SW restarts).
+
+async function validateStoredPopups(): Promise<void> {
+  const popups = await getAllPopups();
+  const entries = Object.entries(popups) as [string, PopupEntry][];
+  if (entries.length === 0) return;
+
+  const validated: PopupsMap = { ...popups };
+  for (const [winId, entry] of entries) {
+    try {
+      await chrome.windows.get(entry.popupWindowId);
+      await chrome.tabs.get(entry.popupTabId);
+      await chrome.tabs.get(entry.anchorTabId);
+    } catch {
+      delete validated[Number(winId)];
+    }
+  }
+  await chrome.storage.session.set({ popups: validated });
+}
+
+validateStoredPopups();
+
 // ─── State Management (chrome.storage.session) ───────────────────────────────
 // Shape: { popups: PopupsMap }
 

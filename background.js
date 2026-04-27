@@ -3,6 +3,28 @@
 // Service worker — all business logic for the Tether extension.
 importScripts('consts.js');
 const MAX_POPUPS = 5;
+// ─── Startup Validation ───────────────────────────────────────────────────────
+// On every service worker activation, prune popup entries whose windows or tabs
+// no longer exist (caused by crashes or mid-op SW restarts).
+async function validateStoredPopups() {
+    const popups = await getAllPopups();
+    const entries = Object.entries(popups);
+    if (entries.length === 0)
+        return;
+    const validated = { ...popups };
+    for (const [winId, entry] of entries) {
+        try {
+            await chrome.windows.get(entry.popupWindowId);
+            await chrome.tabs.get(entry.popupTabId);
+            await chrome.tabs.get(entry.anchorTabId);
+        }
+        catch {
+            delete validated[Number(winId)];
+        }
+    }
+    await chrome.storage.session.set({ popups: validated });
+}
+validateStoredPopups();
 // ─── State Management (chrome.storage.session) ───────────────────────────────
 // Shape: { popups: PopupsMap }
 async function getAllPopups() {
