@@ -111,6 +111,7 @@ function injectDotWhenReady(tabId, dot, iconUrl) {
 async function popOut(tab) {
     const [bounds, popups] = await Promise.all([getPopupBounds(), getAllPopups()]);
     const color = pickColor(popups);
+    const stagger = Object.keys(popups).length * 30;
     // Chrome doesn't allow tabs.move to/from popup-type windows, so we open the
     // URL directly in the new popup (the page reloads — JS state is not preserved).
     const popupWindow = await chrome.windows.create({
@@ -118,8 +119,8 @@ async function popOut(tab) {
         url: tab.url,
         width: bounds.width,
         height: bounds.height,
-        left: bounds.left,
-        top: bounds.top,
+        left: bounds.left + stagger,
+        top: bounds.top + stagger,
     });
     const popupTabId = popupWindow.tabs[0].id;
     const dot = COLOR_DOTS[color] ?? '⚫';
