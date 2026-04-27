@@ -72,23 +72,8 @@ async function getPopupBounds() {
     };
 }
 // ─── Pop Out Flow ─────────────────────────────────────────────────────────────
-async function popOut(tab) {
-    const [bounds, popups] = await Promise.all([getPopupBounds(), getAllPopups()]);
-    const color = pickColor(popups);
-    // Chrome doesn't allow tabs.move to/from popup-type windows, so we open the
-    // URL directly in the new popup (the page reloads — JS state is not preserved).
-    const popupWindow = await chrome.windows.create({
-        type: 'popup',
-        url: tab.url,
-        width: bounds.width,
-        height: bounds.height,
-        left: bounds.left,
-        top: bounds.top,
-    });
-    const popupTabId = popupWindow.tabs[0].id;
-    const dot = COLOR_DOTS[color] ?? '⚫';
-    const iconUrl = chrome.runtime.getURL('icons/icon48.png');
-    const execDot = (tabId) => chrome.scripting.executeScript({
+function injectDotWhenReady(tabId, dot, iconUrl) {
+    const execDot = () => chrome.scripting.executeScript({
         target: { tabId },
         func: (d, icon) => {
             if (window.__tetherDot)
@@ -115,13 +100,31 @@ async function popOut(tab) {
         },
         args: [dot, iconUrl],
     });
-    // Register listener BEFORE other awaits so we don't miss the complete event
     chrome.tabs.onUpdated.addListener(function onComplete(id, info) {
-        if (id !== popupTabId || info.status !== 'complete')
+        if (id !== tabId || info.status !== 'complete')
             return;
         chrome.tabs.onUpdated.removeListener(onComplete);
-        execDot(popupTabId).catch(console.error);
+        execDot().catch(console.error);
     });
+    execDot().catch(() => { });
+}
+async function popOut(tab) {
+    const [bounds, popups] = await Promise.all([getPopupBounds(), getAllPopups()]);
+    const color = pickColor(popups);
+    // Chrome doesn't allow tabs.move to/from popup-type windows, so we open the
+    // URL directly in the new popup (the page reloads — JS state is not preserved).
+    const popupWindow = await chrome.windows.create({
+        type: 'popup',
+        url: tab.url,
+        width: bounds.width,
+        height: bounds.height,
+        left: bounds.left,
+        top: bounds.top,
+    });
+    const popupTabId = popupWindow.tabs[0].id;
+    const dot = COLOR_DOTS[color] ?? '⚫';
+    const iconUrl = chrome.runtime.getURL('icons/icon48.png');
+    injectDotWhenReady(popupTabId, dot, iconUrl);
     // Close the original tab and insert anchor at its position
     await chrome.tabs.remove(tab.id);
     const anchorTab = await chrome.tabs.create({
@@ -142,9 +145,91 @@ async function popOut(tab) {
         tabUrl: tab.url ?? '',
         color,
     });
-    // Also try immediately in case tab already reached complete before our listener fired
-    execDot(popupTabId).catch(() => { });
 }
+// ─── Auto-Tether (drag-out detection) ────────────────────────────────────────
+const autoTetherNotifications = new Map(); // notifId → popupWindowId
+async function autoTether(tab, oldWindowId, oldPosition, newWindow) {
+    const popups = await getAllPopups();
+    if (Object.keys(popups).length >= MAX_POPUPS) {
+        chrome.notifications.create({
+            type: 'basic',
+            iconUrl: chrome.runtime.getURL('icons/icon48.png'),
+            title: 'Tether',
+            message: `You've reached the limit of ${MAX_POPUPS} popup tabs. Return one before popping another.`,
+        });
+        return;
+    }
+    const color = pickColor(popups);
+    const dot = COLOR_DOTS[color] ?? '⚫';
+    const iconUrl = chrome.runtime.getURL('icons/icon48.png');
+    const left = newWindow.left ?? 100;
+    const top = newWindow.top ?? 100;
+    const width = newWindow.width ?? 900;
+    const height = newWindow.height ?? 700;
+    const popupWindow = await chrome.windows.create({
+        type: 'popup',
+        url: tab.url,
+        width,
+        height,
+        left,
+        top,
+    });
+    const popupTabId = popupWindow.tabs[0].id;
+    injectDotWhenReady(popupTabId, dot, iconUrl);
+    try {
+        await chrome.windows.remove(newWindow.id);
+    }
+    catch { /* already gone */ }
+    const anchorTab = await chrome.tabs.create({
+        url: chrome.runtime.getURL(`anchor.html#${popupWindow.id}`),
+        index: oldPosition,
+        windowId: oldWindowId,
+        active: true,
+    });
+    await addPopup({
+        popupWindowId: popupWindow.id,
+        popupTabId,
+        originalWindowId: oldWindowId,
+        anchorTabId: anchorTab.id,
+        originalIndex: oldPosition,
+        tabTitle: tab.title ?? '',
+        tabFavicon: tab.favIconUrl ?? '',
+        tabUrl: tab.url ?? '',
+        color,
+    });
+    await chrome.storage.local.set({ lastPopupPosition: { left, top } });
+    const notifId = `auto-tether-${popupWindow.id}`;
+    autoTetherNotifications.set(notifId, popupWindow.id);
+    chrome.notifications.create(notifId, {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon48.png'),
+        title: 'Tab tethered',
+        message: tab.title || tab.url || '',
+        buttons: [{ title: 'Undo' }],
+    });
+}
+chrome.notifications.onButtonClicked.addListener(async (notifId, btnIdx) => {
+    if (btnIdx !== 0)
+        return;
+    const popupWindowId = autoTetherNotifications.get(notifId);
+    if (popupWindowId === undefined)
+        return;
+    autoTetherNotifications.delete(notifId);
+    chrome.notifications.clear(notifId);
+    const entry = await getPopupByWindowId(popupWindowId);
+    if (!entry)
+        return;
+    let anchorIndex = entry.originalIndex;
+    try {
+        const anchorTab = await chrome.tabs.get(entry.anchorTabId);
+        anchorIndex = anchorTab.index;
+    }
+    catch { /* anchor gone, fall back */ }
+    await returnTab(popupWindowId, anchorIndex);
+});
+chrome.notifications.onClosed.addListener((notifId) => {
+    autoTetherNotifications.delete(notifId);
+});
 // ─── Return Flow ─────────────────────────────────────────────────────────────
 async function returnTab(popupWindowId, anchorTabIndex) {
     const entry = await getPopupByWindowId(popupWindowId);
