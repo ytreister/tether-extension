@@ -28,5 +28,9 @@
       },
       "description": "Pop current tab into popup / return tab to main window"
     }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   }
 }

@@ -20,3 +20,8 @@ interface PopupBounds {
   left: number;
   top: number;
 }
+
+interface PendingDetach {
+  oldWindowId: number;
+  oldPosition: number;
+}
